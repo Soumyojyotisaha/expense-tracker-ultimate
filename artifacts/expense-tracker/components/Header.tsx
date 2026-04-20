@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/context/ThemeContext";
 import { useApp } from "@/context/AppContext";
 
 type HeaderProps = {
@@ -20,7 +21,8 @@ type HeaderProps = {
 export function Header({ title, subtitle, right }: HeaderProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { dark, saveDark, dbReady } = useApp();
+  const { isDark, toggleTheme } = useTheme();
+  const { dbReady } = useApp();
 
   const topPad =
     Platform.OS === "web" ? Math.max(insets.top, 67) : insets.top + 12;
@@ -57,11 +59,11 @@ export function Header({ title, subtitle, right }: HeaderProps) {
         <View style={styles.rightRow}>
           {right}
           <TouchableOpacity
-            onPress={() => saveDark(!dark)}
+            onPress={toggleTheme}
             style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
           >
             <Feather
-              name={dark ? "sun" : "moon"}
+              name={isDark ? "sun" : "moon"}
               size={18}
               color={colors.primary}
             />

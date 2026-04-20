@@ -5,9 +5,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  supabase,
   saveCfg,
   loadCfg,
   loadExpenses,
@@ -42,20 +40,13 @@ export const MONTHS = [
   "Jul","Aug","Sep","Oct","Nov","Dec",
 ] as const;
 
-export type UtilityItem = {
-  n: string;
-  a: number;
-};
-
+export type UtilityItem = { n: string; a: number };
 export type ShareMap = Record<Member, number>;
 export type PaidMap = Record<Member, boolean>;
 export type UtilPickMap = Record<Member, number[]>;
 export type DailyGrid = Record<string, number>;
 
-type MaidData = {
-  start: string;
-  leaves: string[];
-};
+type MaidData = { start: string; leaves: string[] };
 
 type AppContextType = {
   expenses: Expense[];
@@ -66,7 +57,6 @@ type AppContextType = {
   utility: UtilityItem[];
   utilPick: UtilPickMap;
   paid: PaidMap;
-  dark: boolean;
   notes: { txt: string; time: string }[];
   activity: { user: string; time: string };
   maid: MaidData;
@@ -79,7 +69,6 @@ type AppContextType = {
   setUtility: (v: UtilityItem[]) => void;
   setUtilPick: (v: UtilPickMap) => void;
   setPaid: (v: PaidMap) => void;
-  setDark: (v: boolean) => void;
   setNotes: (v: { txt: string; time: string }[]) => void;
   setMaid: (v: MaidData) => void;
 
@@ -92,7 +81,6 @@ type AppContextType = {
   saveRentData: (r: number, d: number, s: ShareMap) => Promise<void>;
   saveUtilityData: (items: UtilityItem[], picks: UtilPickMap) => Promise<void>;
   savePaid: (p: PaidMap) => Promise<void>;
-  saveDark: (v: boolean) => Promise<void>;
   saveMaid: (v: MaidData) => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -130,7 +118,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [utility, setUtilityState] = useState<UtilityItem[]>(defaultUtility);
   const [utilPick, setUtilPickState] = useState<UtilPickMap>(defaultUtilPick);
   const [paid, setPaidState] = useState<PaidMap>(defaultPaid);
-  const [dark, setDarkState] = useState(false);
   const [notes, setNotesState] = useState<{ txt: string; time: string }[]>([]);
   const [activity, setActivityState] = useState({ user: "-", time: "-" });
   const [maid, setMaidState] = useState<MaidData>({ start: "", leaves: [] });
@@ -170,7 +157,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r.k === "utility") setUtilityState(val as UtilityItem[]);
         if (r.k === "utilPick") setUtilPickState(val as UtilPickMap);
         if (r.k === "paid") setPaidState({ ...defaultPaid, ...(val as PaidMap) });
-        if (r.k === "dark") setDarkState(Boolean(val));
         if (r.k === "notes") setNotesState(val as { txt: string; time: string }[]);
         if (r.k === "activity") setActivityState(val as { user: string; time: string });
         if (r.k === "maid") setMaidState(val as MaidData);
@@ -263,11 +249,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await saveCfg("paid", p);
   };
 
-  const saveDark = async (v: boolean) => {
-    setDarkState(v);
-    await saveCfg("dark", v);
-  };
-
   const saveMaid = async (v: MaidData) => {
     setMaidState(v);
     await saveCfg("maid", v);
@@ -284,7 +265,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         utility,
         utilPick,
         paid,
-        dark,
         notes,
         activity,
         maid,
@@ -296,7 +276,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUtility: setUtilityState,
         setUtilPick: setUtilPickState,
         setPaid: setPaidState,
-        setDark: setDarkState,
         setNotes: setNotesState,
         setMaid: setMaidState,
         addNote,
@@ -308,7 +287,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         saveRentData,
         saveUtilityData,
         savePaid,
-        saveDark,
         saveMaid,
         refresh,
       }}
