@@ -57,6 +57,7 @@ type AppContextType = {
   utility: UtilityItem[];
   utilPick: UtilPickMap;
   paid: PaidMap;
+  rentMonthPaid: Record<number, boolean>;
   notes: { txt: string; time: string }[];
   activity: { user: string; time: string };
   maid: MaidData;
@@ -81,6 +82,7 @@ type AppContextType = {
   saveRentData: (r: number, d: number, s: ShareMap) => Promise<void>;
   saveUtilityData: (items: UtilityItem[], picks: UtilPickMap) => Promise<void>;
   savePaid: (p: PaidMap) => Promise<void>;
+  saveRentMonthPaid: (v: Record<number, boolean>) => Promise<void>;
   saveMaid: (v: MaidData) => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -118,6 +120,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [utility, setUtilityState] = useState<UtilityItem[]>(defaultUtility);
   const [utilPick, setUtilPickState] = useState<UtilPickMap>(defaultUtilPick);
   const [paid, setPaidState] = useState<PaidMap>(defaultPaid);
+  const [rentMonthPaid, setRentMonthPaidState] = useState<Record<number, boolean>>({});
   const [notes, setNotesState] = useState<{ txt: string; time: string }[]>([]);
   const [activity, setActivityState] = useState({ user: "-", time: "-" });
   const [maid, setMaidState] = useState<MaidData>({ start: "", leaves: [] });
@@ -157,6 +160,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r.k === "utility") setUtilityState(val as UtilityItem[]);
         if (r.k === "utilPick") setUtilPickState(val as UtilPickMap);
         if (r.k === "paid") setPaidState({ ...defaultPaid, ...(val as PaidMap) });
+        if (r.k === "rentMonthPaid") setRentMonthPaidState(val as Record<number, boolean>);
         if (r.k === "notes") setNotesState(val as { txt: string; time: string }[]);
         if (r.k === "activity") setActivityState(val as { user: string; time: string });
         if (r.k === "maid") setMaidState(val as MaidData);
@@ -249,6 +253,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await saveCfg("paid", p);
   };
 
+  const saveRentMonthPaid = async (v: Record<number, boolean>) => {
+    setRentMonthPaidState(v);
+    await saveCfg("rentMonthPaid", v);
+  };
+
   const saveMaid = async (v: MaidData) => {
     setMaidState(v);
     await saveCfg("maid", v);
@@ -265,6 +274,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         utility,
         utilPick,
         paid,
+        rentMonthPaid,
         notes,
         activity,
         maid,
@@ -287,6 +297,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         saveRentData,
         saveUtilityData,
         savePaid,
+        saveRentMonthPaid,
         saveMaid,
         refresh,
       }}

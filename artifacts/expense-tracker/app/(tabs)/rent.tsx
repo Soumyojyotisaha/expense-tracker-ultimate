@@ -20,7 +20,7 @@ import { StatCard } from "@/components/StatCard";
 export default function RentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { rent, deposit, share, saveRentData } = useApp();
+  const { rent, deposit, share, rentMonthPaid, saveRentData, saveRentMonthPaid } = useApp();
 
   const [rentVal, setRentVal] = useState(String(rent));
   const [depVal, setDepVal] = useState(String(deposit));
@@ -47,6 +47,12 @@ export default function RentScreen() {
   };
 
   const monthLabel = MONTHS[curMonth];
+
+  const toggleRentMonth = async (i: number) => {
+    if (i < curMonth) return; // past months are locked
+    const next = { ...rentMonthPaid, [i]: !rentMonthPaid[i] };
+    await saveRentMonthPaid(next);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -132,7 +138,22 @@ export default function RentScreen() {
             const start = Math.max(0, curMonth - 3);
             const end = Math.min(11, curMonth + 3);
             if (i < start || i > end) return null;
+
+            const isPast = i < curMonth;
+            const isCurrent = i === curMonth;
             const isLast = i === end;
+            // past months are always considered paid and locked
+            const isPaid = isPast ? true : !!rentMonthPaid[i];
+            const isLocked = isPast;
+
+            const statusColor = isPast
+              ? colors.success
+              : isCurrent
+              ? colors.warning
+              : colors.mutedForeground;
+
+            const checkColor = isPaid ? colors.success : colors.border;
+
             return (
               <View
                 key={mn}
@@ -141,26 +162,33 @@ export default function RentScreen() {
                   { borderBottomColor: isLast ? "transparent" : colors.border },
                 ]}
               >
-                <View style={styles.monthLeft}>
-                  <Text style={[styles.monthName, { color: colors.foreground }]}>
-                    {mn}
+                {/* Checkbox */}
+                <TouchableOpacity
+                  onPress={() => toggleRentMonth(i)}
+                  disabled={isLocked}
+                  style={styles.checkbox}
+                  activeOpacity={isLocked ? 1 : 0.6}
+                >
+                  <Feather
+                    name={isPaid ? "check-square" : "square"}
+                    size={20}
+                    color={checkColor}
+                  />
+                </TouchableOpacity>
+
+                {/* Month name */}
+                <Text style={[styles.monthName, { color: colors.foreground }]}>
+                  {mn}
+                </Text>
+
+                {/* Status badge */}
+                <View style={[styles.statusBadge, { backgroundColor: statusColor + "18" }]}>
+                  <Text style={[styles.monthStatus, { color: statusColor }]}>
+                    {isPast ? "Paid" : isCurrent ? "Current" : "Upcoming"}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.monthStatus,
-                    {
-                      color:
-                        i < curMonth
-                          ? colors.success
-                          : i === curMonth
-                          ? colors.warning
-                          : colors.mutedForeground,
-                    },
-                  ]}
-                >
-                  {i < curMonth ? "Paid" : i === curMonth ? "Current" : "Upcoming"}
-                </Text>
+
+                {/* Amount */}
                 <Text style={[styles.monthAmt, { color: colors.primary }]}>
                   ₹{rent}
                 </Text>
@@ -242,23 +270,34 @@ const styles = StyleSheet.create({
   monthRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderBottomWidth: 1,
+    gap: 10,
   },
-  monthLeft: { width: 40 },
+  checkbox: {
+    width: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   monthName: {
+    flex: 1,
     fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
   monthStatus: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
   },
   monthAmt: {
     fontSize: 14,
     fontFamily: "Inter_700Bold",
+    minWidth: 54,
+    textAlign: "right",
   },
   saveBtn: {
     flexDirection: "row",
