@@ -1,0 +1,119 @@
+import React,{useState,useEffect} from 'react';
+import { createClient } from '@supabase/supabase-js';
+import {motion,AnimatePresence} from 'framer-motion';
+import {Bell,Wallet,Users,Plus,Menu,Moon,Sun,Edit3,Check,X} from 'lucide-react';
+import {PieChart as RPieChart,Pie,Cell,Tooltip,ResponsiveContainer,Legend,BarChart,Bar,XAxis,YAxis,CartesianGrid,LineChart,Line} from 'recharts';
+
+const members=['Soumyojyoti','Harsh','Anirban'];
+const opts=['Grocery','Milk','Food','Electricity','Water','WiFi','Gas','Rent','Transport','Other','Utility'];
+const tabs=['dashboard','add','rent','utility','members'];
+const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const colors=['#7c3aed','#8b5cf6','#a78bfa','#c4b5fd'];
+const supabase=createClient('https://fempvquonorjcxpzbmaz.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlbXB2cXVvbm9yamN4cHpibWF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MTc0OTgsImV4cCI6MjA5MjA5MzQ5OH0.ZLllAFMcPOome-q6xKmoGGil6xIlcRS_GX1W0KyWnuM');
+const saveCfg=async(k,v)=>{const {error}=await supabase.from('app_config').upsert({k,v:JSON.stringify(v)}).select();return error};
+const saveDaily=async(g)=>{const rows=[];for(let m=0;m<12;m++)for(let d=1;d<=31;d++)rows.push({m,d,a:g[`${m}-${d}`]||0});const {error}=await supabase.from('daily_sheet').upsert(rows);return error};
+const loadCfg=async()=>{const {data}=await supabase.from('app_config').select('*');return data||[]};
+const loadDaily=async()=>{const {data}=await supabase.from('daily_sheet').select('*');return data||[]};
+const saveRentDb=async(r,d,s)=>{await saveCfg('rent',r);await saveCfg('deposit',d);await saveCfg('share',s)};
+
+export default function App(){
+const [tab,setTab]=useState('dashboard');
+const [side,setSide]=useState(false);
+const [dark,setDark]=useState(false);
+const [popup,setPopup]=useState(true);
+const [sheet,setSheet]=useState(false);
+const [askPay,setAskPay]=useState(false);
+const [paid,setPaid]=useState({});
+const [edit,setEdit]=useState('');
+const [rent,setRent]=useState(0);
+const [deposit,setDeposit]=useState(0);
+const [share,setShare]=useState({Soumyojyoti:0,Harsh:0,Anirban:0});
+const [form,setForm]=useState([{t:'',a:'',p:members[0]}]);
+const [utility,setUtility]=useState([{n:'Furniture',a:8535},{n:'Maid',a:3500},{n:'Electricity',a:485.5},{n:'WiFi',a:933.3},{n:'Extra (Harsh Cabinet)',a:933.32}]);
+const [utilPick,setUtilPick]=useState({Soumyojyoti:[0,1,2,3],Harsh:[0,1,2,3,4],Anirban:[0,1,2,3]});
+const [expenses,setExpenses]=useState([]);
+const [dbReady,setDbReady]=useState(false);
+const [msg,setMsg]=useState('');
+const [notes,setNotes]=useState([]);
+const [noteTxt,setNoteTxt]=useState('');
+const [activity,setActivity]=useState({user:'-',time:'-'});
+const [maid,setMaid]=useState({start:'',leaves:[]});
+const [leaveDate,setLeaveDate]=useState('');
+const [grid,setGrid]=useState(()=>{const g={};for(let m=0;m<12;m++)for(let d=1;d<=31;d++)g[`${m}-${d}`]=0;return g;});
+
+const now=new Date(); const curMonth=now.getMonth(); const curDate=now.getDate();
+const page=dark?'bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white':'bg-gradient-to-br from-[#f5f2ff] via-white to-[#efeaff] text-slate-800';
+const glass=dark?'bg-slate-900/95 backdrop-blur-xl border border-white/10 text-white':'bg-white border border-slate-200 text-slate-800';
+const input=dark?'w-full p-2 rounded-xl border border-white/10 bg-slate-800 text-white placeholder:text-slate-400':'w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-800';
+const todayLabel=now.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const utilShare=n=>{const arr=utilPick[n]||[];const base=arr.filter(i=>i<4).reduce((s,i)=>s+utility[i].a,0)/3;return n==='Harsh'?base+utility[4].a:base};
+const today=grid[`${curMonth}-${curDate}`]||0;
+const month=Array.from({length:31},(_,i)=>grid[`${curMonth}-${i+1}`]||0).reduce((a,b)=>a+b,0);
+const utilTotal=utility.reduce((s,x)=>s+x.a,0);
+const by=members.map(n=>({n,a:(month/3)+utilShare(n)+(share[n]||0)}));
+const cat=opts.map(o=>({name:o,value:expenses.filter(e=>((e.t||'').trim()||'Utility')===o && Number(e.m??curMonth)===curMonth && Number(e.y??now.getFullYear())===now.getFullYear()).reduce((s,e)=>s+Number(e.a||0),0)})).filter(x=>x.value>0);
+const allPaid=members.every(m=>paid[m]);
+const monthIcon=i=>i<curMonth?'✅':i===curMonth?(allPaid?'✅':'⏳'):'⬜';
+const monthCmp=months.slice(0,curMonth+1).map((n,i)=>({name:n,total:expenses.filter(e=>Number(e.m??curMonth)===i&&Number(e.y??now.getFullYear())===now.getFullYear()).reduce((s,e)=>s+Number(e.a||0),0)}));
+const trend=opts.map(o=>({name:o,val:expenses.filter(e=>((e.t||'').trim()||'Utility')===o&&Number(e.m??curMonth)===curMonth&&Number(e.y??now.getFullYear())===now.getFullYear()).reduce((s,e)=>s+Number(e.a||0),0)})).filter(x=>x.val>0);
+const highDays=Array.from({length:31},(_,i)=>({day:i+1,val:grid[`${curMonth}-${i+1}`]||0})).filter(x=>x.val>0).sort((a,b)=>b.val-a.val).slice(0,5);
+
+useEffect(()=>{(async()=>{try{const {data}=await supabase.from('expenses').select('*').order('id',{ascending:false});if(data)setExpenses(data);const cfg=await loadCfg();const ds=await loadDaily();if(ds.length){const ng={};for(let m=0;m<12;m++)for(let d=1;d<=31;d++)ng[`${m}-${d}`]=0;ds.forEach(r=>ng[`${r.m}-${r.d}`]=Number(r.a)||0);setGrid(ng);}let hasRent=false,hasDep=false,hasShare=false,hasUtil=false,hasPick=false,hasPaid=false,hasDark=false;cfg.forEach(r=>{let val;try{val=JSON.parse(r.v)}catch{val=r.v};if(r.k==='rent'){hasRent=true;setRent(Number(val)||0)}if(r.k==='deposit'){hasDep=true;setDeposit(Number(val)||0)}if(r.k==='share'){hasShare=true;setShare(val||{})}if(r.k==='utility'){hasUtil=true;setUtility(val||[])}if(r.k==='utilPick'){hasPick=true;setUtilPick(val||{})}if(r.k==='paid'){hasPaid=true;setPaid(val||{})}if(r.k==='dark'){hasDark=true;setDark(!!val)}if(r.k==='notes'){setNotes(val||[])}if(r.k==='activity'){setActivity(val||{user:'-',time:'-'})}if(r.k==='maid'){setMaid(val||{start:'',leaves:[]})}});if(!hasShare)await saveCfg('share',{Soumyojyoti:0,Harsh:0,Anirban:0});if(!hasUtil)await saveCfg('utility',[{n:'Furniture',a:8535},{n:'Maid',a:3500},{n:'Electricity',a:485.5},{n:'WiFi',a:933.3},{n:'Extra (Harsh Cabinet)',a:933.32}]);if(!hasPick)await saveCfg('utilPick',{Soumyojyoti:[0,1,2,3],Harsh:[0,1,2,3,4],Anirban:[0,1,2,3]});if(!hasPaid)await saveCfg('paid',{});if(!hasDark)await saveCfg('dark',false)}catch(e){}})();const ch=supabase.channel('expenses-live').on('postgres_changes',{event:'*',schema:'public',table:'expenses'},payload=>{if(payload.eventType==='INSERT')setExpenses(p=>[payload.new,...p]);}).subscribe();return()=>{supabase.removeChannel(ch)}},[]);
+
+const markActive=async(u)=>{const a={user:u,time:new Date().toLocaleString('en-IN')};setActivity(a);saveCfg('activity',a)};
+const addNote=async()=>{if(!noteTxt.trim())return;const ns=[{txt:noteTxt,time:new Date().toLocaleString('en-IN')},...notes].slice(0,20);setNotes(ns);await saveCfg('notes',ns);setNoteTxt('')};
+const saveMaid=async(v)=>{setMaid(v);await saveCfg('maid',v)};
+const addLeave=async()=>{if(!leaveDate)return;const nv={...maid,leaves:[...maid.leaves,leaveDate]};setLeaveDate('');await saveMaid(nv)};
+const delExp=async(id)=>{const {error}=await supabase.from('expenses').delete().eq('id',id).select();if(error){setMsg(error.message);return;}setExpenses(p=>p.filter(x=>x.id!==id));setMsg('Deleted from database')};
+const updExp=async(id,f,v)=>{const nv=f==='a'?Number(v):v;const {error}=await supabase.from('expenses').update({[f]:nv}).eq('id',id).select();if(error){setMsg(error.message);return;}setExpenses(p=>p.map(x=>x.id===id?{...x,[f]:nv}:x));setMsg('Updated in database')};
+const add=async()=>{const rows=form.filter(x=>x.a);if(!rows.length)return;const sum=rows.reduce((s,x)=>s+Number(x.a),0);const adds=rows.map(x=>({...x,t:(x.t||'Utility'),a:+x.a,d:curDate,m:curMonth,y:now.getFullYear()}));const key=`${curMonth}-${curDate}`;const next=(Number(grid[key])||0)+sum;const ng={...grid,[key]:next};setGrid(ng);await saveCfg('grid',ng);await supabase.from('daily_sheet').upsert({m:curMonth,d:curDate,a:next},{onConflict:'m,d'});try{const {data,error}=await supabase.from('expenses').insert(adds).select();if(error){setMsg(error.message);}else{if(data)setExpenses(p=>[...data,...p]);setMsg('Saved to database');markActive(adds[0].p);}}catch(e){setMsg('Saved locally');}setForm([{t:'',a:'',p:members[0]}]);setPopup(false)};
+const cellVal=(d,m)=>grid[`${m}-${d}`]||0;
+const setCell=(d,m,v)=>{const ng={...grid,[`${m}-${d}`]:v};setGrid(ng);saveCfg('grid',ng);saveDaily(ng)};
+
+return (
+<div className={`min-h-screen p-6 ${page}`}>
+<button onClick={()=>setSide(!side)} className={`fixed top-6 left-6 z-50 h-12 w-12 rounded-2xl flex items-center justify-center shadow-xl ${glass}`}><Menu size={18}/></button>
+<button onClick={()=>(()=>{const nv=!dark;setDark(nv);saveCfg('dark',nv)})()} className={`fixed top-6 right-6 z-50 h-12 w-12 rounded-2xl flex items-center justify-center shadow-xl ${glass}`}>{dark?<Sun size={18}/>:<Moon size={18}/>}</button>
+
+<AnimatePresence>
+{side&&<motion.div initial={{x:-260}} animate={{x:0}} exit={{x:-260}} className={`fixed top-6 left-6 z-40 w-64 h-[90vh] p-3 pt-20 rounded-3xl shadow-2xl ${glass}`}>{tabs.map(t=><button key={t} onClick={()=>{setTab(t);setSide(false);if(t==='dashboard')setPopup(true);if(t==='utility')setAskPay(true)}} className={`w-full px-3 py-3 mb-2 rounded-2xl text-left capitalize ${tab===t?'bg-violet-600 text-white':dark?'bg-white/5':'bg-slate-100'}`}>{t}</button>)}</motion.div>}
+</AnimatePresence>
+
+<div className='max-w-7xl mx-auto'>
+<h1 className='text-5xl font-bold text-center mb-2 tracking-tight'>Expense Tracker</h1>
+<div className='text-center mb-6 opacity-70'>Today: {todayLabel} {dbReady?'• Live Sync On':'• Local Mode'}</div>{msg&&<div className='text-center mb-4 text-sm opacity-80'>{msg}</div>}
+
+<AnimatePresence>{popup&&<Modal dark={dark}><div className='text-xl mb-3 flex gap-2'><Bell size={18}/>Did you log today's expense?</div><ExpenseForm form={form} setForm={setForm} add={add} input={input} dark={dark}/><button onClick={()=>setPopup(false)} className={`w-full mt-2 py-2 rounded-xl ${dark?'bg-white/10 text-white border border-white/10':'bg-slate-200 text-slate-800'}`}>Skip</button></Modal>}</AnimatePresence>
+<AnimatePresence>{askPay&&tab==='utility'&&<Modal dark={dark}><div className='text-xl mb-4'>Did you pay the utility this month?</div>{members.map(m=><label key={m} className='flex justify-between py-2'><span>{m}</span><input type='checkbox' checked={paid[m]||false} onChange={e=>(()=>{const np={...paid,[m]:e.target.checked};setPaid(np);saveCfg('paid',np)})()}/></label>)}<button onClick={()=>setAskPay(false)} className='w-full py-2 rounded-xl bg-violet-600 text-white'>Save</button></Modal>}</AnimatePresence>
+<AnimatePresence>{sheet&&<Modal dark={dark} wide><div className='flex justify-between mb-3'><h2 className='text-2xl'>Daily Expense Sheet</h2><button onClick={()=>setSheet(false)}><X/></button></div><div className={`mb-3 p-3 rounded-2xl ${dark?'bg-white/5 border border-white/10':'bg-slate-50 border border-slate-200'}`}><div className='font-semibold mb-2'>Last 7 Days Transactions</div><div className='grid md:grid-cols-7 grid-cols-2 gap-2'>{Array.from({length:7},(_,k)=>{const d=curDate-6+k;const v=d>0?(grid[`${curMonth}-${d}`]||0):0;return <div key={k} className={`p-2 rounded-xl text-center ${dark?'bg-white/5':'bg-white border border-slate-200'}`}><div className='text-xs opacity-70'>{d>0?`${d} ${months[curMonth]}`:'-'}</div><div className='font-bold'>₹{v}</div></div>})}</div></div><table className='w-full border-collapse text-sm'>{/* sheet */}<thead><tr><th className='border border-black p-2'>Date</th>{months.map(m=><th key={m} className='border border-black p-2'>{m}</th>)}</tr></thead><tbody>{Array.from({length:31},(_,i)=><tr key={i}><td className='border border-black p-2'>{i+1}</td>{months.map((m,mi)=><td key={m} className='border border-black p-1 text-center'>{edit===`${i}-${mi}`?<input className='w-full text-center' value={cellVal(i+1,mi)} onChange={e=>setCell(i+1,mi,Number(e.target.value)||0)} onBlur={()=>setEdit('')}/>:<button className='w-full' onClick={()=>setEdit(`${i}-${mi}`)}>{cellVal(i+1,mi)}</button>}</td>)}</tr>)}</tbody><tfoot><tr><td className='border border-black p-2 font-bold'>Total</td>{months.map((m,mi)=><td key={m} className='border border-black p-2 font-bold text-center'>{Array.from({length:31},(_,i)=>grid[`${mi}-${i+1}`]||0).reduce((a,b)=>a+b,0)}</td>)}</tr></tfoot></table></Modal>}</AnimatePresence>
+
+{tab==='dashboard'&&<div className='grid md:grid-cols-3 gap-4'>
+<div onClick={()=>setSheet(true)}><Card dark={dark} title={`Daily Spend (${curDate})`} value={`₹${today}`} icon={<Wallet size={18}/>}/></div>
+<div><div className={`p-5 h-36 rounded-3xl shadow-xl ${dark?'bg-slate-900/90 backdrop-blur-xl border border-white/10':'bg-white border border-slate-200'}`}><div className='opacity-70 flex gap-2 items-center'><Wallet size={18}/>Budget</div><div className='text-3xl font-bold mt-4'>₹{month}/6000</div><div className={`mt-3 text-sm font-semibold ${month<=6000?'text-green-500':'text-red-500'}`}>{month<=6000?'✓ Within Budget':'⚠ Budget Exceeded'}</div></div></div>
+<Card dark={dark} title='Members' value='3' icon={<Users size={18}/>}/>
+<Panel dark={dark} title='Recent Expenses'>{Array.from({length:7},(_,k)=>{const d=curDate-6+k; if(d<=0) return null; const v=grid[`${curMonth}-${d}`]||0; return <Row key={k} e={{t:`${d} ${months[curMonth]}`,a:v}} dark={dark}/>})}</Panel>
+<Panel dark={dark} title='Category Spend'><div className='h-72'><ResponsiveContainer width='100%' height='100%'><RPieChart><Pie data={cat} dataKey='value' nameKey='name' cx='50%' cy='45%' outerRadius={85} label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`}>{cat.map((x,i)=><Cell key={i} fill={colors[i%colors.length]}/>)}</Pie><Tooltip formatter={(v)=>`₹${v}`}/><Legend verticalAlign='bottom' height={36}/></RPieChart></ResponsiveContainer></div><div className='mt-2 space-y-1 text-sm'>{cat.sort((a,b)=>b.value-a.value).slice(0,3).map((x,i)=><div key={i} className='flex justify-between'><span>{x.name}</span><span>₹{x.value}</span></div>)}</div></Panel>
+<Panel dark={dark} title='Month vs Month Comparison'><div className='h-72'><ResponsiveContainer width='100%' height='100%'><BarChart data={monthCmp}><CartesianGrid strokeDasharray='3 3' opacity={0.15}/><XAxis dataKey='name'/><YAxis/><Tooltip formatter={(v)=>`₹${v}`}/><Bar dataKey='total' fill='#8b5cf6' radius={[8,8,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
+<Panel dark={dark} title='Category Trends'><div className='h-72'><ResponsiveContainer width='100%' height='100%'><LineChart data={trend}><CartesianGrid strokeDasharray='3 3' opacity={0.15}/><XAxis dataKey='name'/><YAxis/><Tooltip formatter={(v)=>`₹${v}`}/><Line type='monotone' dataKey='val' stroke='#8b5cf6' strokeWidth={3}/></LineChart></ResponsiveContainer></div></Panel>
+<Panel dark={dark} title='Highest Spend Days'>{highDays.map((x,i)=><Row key={i} e={{t:`${x.day} ${months[curMonth]}`,a:x.val}} dark={dark}/>)}</Panel>
+<Panel dark={dark} title='Presence / Activity'><div className='space-y-3'><div className='text-sm opacity-70'>Who added last expense</div><div className='text-2xl font-bold'>{activity.user}</div><div className='text-sm opacity-70'>Last active time</div><div>{activity.time}</div></div></Panel>
+<Panel dark={dark} title='Chat / Notes'><div className='space-y-2'><div className='flex gap-2'><input className={input} value={noteTxt} placeholder='Need to buy rice' onChange={e=>setNoteTxt(e.target.value)}/><button onClick={addNote} className='px-4 rounded-xl bg-violet-600 text-white'>Add</button></div><div className='space-y-2 max-h-60 overflow-auto'>{notes.map((n,i)=><div key={i} className={`p-2 rounded-xl text-sm ${dark?'bg-white/5':'bg-slate-50 border border-slate-200'}`}><div>{n.txt}</div><div className='opacity-60 text-xs mt-1'>{n.time}</div></div>)}</div></div></Panel>
+<Panel dark={dark} title="Cook Attendance"><div className='space-y-3'><div><div className='text-sm opacity-70 mb-1'>Started Service</div><input type='date' className={input} value={maid.start} onChange={e=>saveMaid({...maid,start:e.target.value})}/></div><div><div className='text-sm opacity-70 mb-1'>Add Leave Date</div><div className='flex gap-2'><input type='date' className={input} value={leaveDate} onChange={e=>setLeaveDate(e.target.value)}/><button onClick={addLeave} className='px-4 rounded-xl bg-violet-600 text-white'>Add</button></div></div><div className='text-sm font-semibold'>Leaves Taken: {maid.leaves.length}</div><div className='max-h-32 overflow-auto space-y-1'>{maid.leaves.map((d,i)=><div key={i} className={`p-2 rounded-xl text-sm ${dark?'bg-white/5':'bg-slate-50 border border-slate-200'}`}>{d}</div>)}</div></div></Panel>
+<Panel dark={dark} title='By Member'>{by.map(x=><Row key={x.n} e={{t:x.n,a:x.a.toFixed(2)}} dark={dark}/>)}</Panel>
+</div>}
+
+{tab==='add'&&<Section dark={dark}><ExpenseForm form={form} setForm={setForm} add={add} input={input} dark={dark}/></Section>}
+{tab==='rent'&&<Section dark={dark}><h2 className='text-2xl mb-3'>Rent & Deposit</h2><EditRow dark={dark} name='Total Rent' val={rent} id='rent' edit={edit} setEdit={setEdit} setVal={v=>{setRent(v);saveRentDb(v,deposit,share)}}/>{members.map(m=><EditRow dark={dark} key={m} name={`${m} Rent Share`} val={share[m]} id={m} edit={edit} setEdit={setEdit} setVal={v=>(()=>{const ns={...share,[m]:v};setShare(ns);saveRentDb(rent,deposit,ns)})()}/>)}<div className='mt-4 pt-3 border-t border-white/10'><EditRow dark={dark} name='Security Deposit' val={deposit} id='deposit' edit={edit} setEdit={setEdit} setVal={v=>{setDeposit(v);saveRentDb(rent,v,share)}}/>{members.map(m=><Row key={m} e={{t:`${m} Deposit Share`,a:(deposit/3).toFixed(2)}} dark={dark}/>)}</div></Section>}
+{tab==='utility'&&<Section dark={dark}><h2 className='text-2xl mb-3'>Utility</h2><div className='grid md:grid-cols-2 gap-4'><div>{utility.map((u,i)=><EditRow dark={dark} key={i} name={u.n} val={u.a} id={`u${i}`} edit={edit} setEdit={setEdit} setVal={v=>(()=>{const nu=utility.map((x,ix)=>ix===i?{...x,a:v}:x);setUtility(nu);saveCfg('utility',nu)})()}/>)}<div className='font-bold py-2'>Total ₹{utilTotal.toFixed(2)}</div><div className='grid md:grid-cols-3 gap-3 mt-3'>{members.map(m=><div key={m} className={`p-3 rounded-2xl ${dark?'bg-white/5 border border-white/10':'bg-slate-50 border border-slate-200'}`}><div className='font-semibold mb-2'>{m}</div>{utility.map((u,i)=><label key={i} className='flex gap-2 text-sm py-1'><input type='checkbox' disabled={i===4} checked={i===4?m==='Harsh':(utilPick[m]||[]).includes(i)} onChange={e=>(()=>{const np={...utilPick,[m]:e.target.checked?[...(utilPick[m]||[]),i]:(utilPick[m]||[]).filter(v=>v!==i)};setUtilPick(np);saveCfg('utilPick',np)})()}/>{u.n}</label>)}<div className='text-right font-bold mt-2'>₹{utilShare(m).toFixed(2)}</div></div>)}</div></div><div className={`p-4 rounded-2xl ${dark?'bg-white/5 border border-white/10':'bg-slate-50 border border-slate-200'}`}><h3 className='font-semibold mb-3'>Calendar</h3><div className='grid grid-cols-3 gap-2'>{months.map((m,i)=><div key={i} className={`p-2 rounded-xl text-center ${dark?'bg-white/5':'bg-white border border-slate-200'}`}><div>{m}</div><div className='text-lg'>{monthIcon(i)}</div></div>)}</div></div></div></Section>}
+{tab==='members'&&<Section dark={dark}><h2 className='text-2xl mb-3'>Edit / Delete Expenses</h2><div className='space-y-2 mb-6 max-h-96 overflow-auto'>{expenses.map(e=><div key={e.id} className={`grid grid-cols-[1.2fr_100px_1fr_80px_40px] gap-2 items-center p-2 rounded-xl ${dark?'bg-white/5':'bg-slate-50'}`}><select className={dark?'bg-slate-800 text-white p-2 rounded':'bg-white p-2 rounded border'} value={e.t} onChange={ev=>updExp(e.id,'t',ev.target.value)}>{opts.map(o=><option key={o}>{o}</option>)}</select><input className={dark?'bg-slate-800 text-white p-2 rounded':'bg-white p-2 rounded border'} value={e.a} onChange={ev=>updExp(e.id,'a',ev.target.value)}/><select className={dark?'bg-slate-800 text-white p-2 rounded':'bg-white p-2 rounded border'} value={e.p} onChange={ev=>updExp(e.id,'p',ev.target.value)}>{members.map(o=><option key={o}>{o}</option>)}</select><div>{months[curMonth]} {e.d}</div><button onClick={()=>delExp(e.id)} className='text-red-500'><X size={16}/></button></div>)}</div>{by.map(x=><Row key={x.n} e={{t:x.n,a:x.a.toFixed(2)}} dark={dark}/>)}</Section>}
+</div>
+</div>
+)}
+
+function Modal({children,dark,wide}){return <motion.div initial={{opacity:0}} animate={{opacity:1}} className='fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4'><div className={`${wide?'max-w-6xl':'max-w-lg'} w-full max-h-[90vh] overflow-auto p-6 rounded-3xl shadow-2xl ${dark?'bg-slate-900 text-white':'bg-white text-slate-800'}`}>{children}</div></motion.div>}
+function Card({title,value,icon,dark}){return <motion.div whileHover={{y:-6,scale:1.02}} className={`p-5 h-36 rounded-3xl shadow-xl ${dark?'bg-slate-900/90 backdrop-blur-xl border border-white/10':'bg-white border border-slate-200'}`}><div className='opacity-70 flex gap-2 items-center'>{icon}{title}</div><div className='text-3xl font-bold mt-4'>{value}</div></motion.div>}
+function Panel({title,children,dark}){return <motion.div whileHover={{y:-4}} className={`p-5 h-96 rounded-3xl shadow-xl overflow-auto ${dark?'bg-slate-900/90 backdrop-blur-xl border border-white/10':'bg-white border border-slate-200'}`}><h2 className='text-xl mb-3'>{title}</h2>{children}</motion.div>}
+function Section({children,dark}){return <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className={`p-6 rounded-3xl shadow-xl ${dark?'bg-slate-900/90 backdrop-blur-xl border border-white/10':'bg-white border border-slate-200'}`}>{children}</motion.div>}
+function Row({e,dark}){return <div className={`flex justify-between py-2 border-b ${dark?'border-white/10':'border-slate-200'}`}><span>{e.t}</span><span>₹{e.a}</span></div>}
+function EditRow({name,val,id,edit,setEdit,setVal,dark}){return <div className={`grid grid-cols-[1fr_140px_40px] gap-3 items-center py-2 border-b ${dark?'border-white/10':'border-slate-200'}`}><span className='truncate pr-2'>{name}</span><div className='text-right w-[140px]'>{edit===id?<input className={`w-full p-1 rounded border text-right ${dark?'bg-white/5 border-white/10':'bg-white border-slate-300'}`} value={val} onChange={e=>setVal(Number(e.target.value)||0)} onBlur={()=>setEdit('')}/>:<span>₹{val}</span>}</div><button onClick={()=>setEdit(edit===id?'':id)}>{edit===id?<Check size={16}/>:<Edit3 size={16}/>}</button></div>}
+function ExpenseForm({form,setForm,add,input,dark}){return <div className='space-y-3'>{form.map((r,i)=><div key={i} className='grid grid-cols-3 gap-2'><select style={{colorScheme:dark?'dark':'light'}} className={input} value={r.t} onChange={e=>setForm(form.map((x,ix)=>ix===i?{...x,t:e.target.value}:x))}><option value=''>Select expense</option>{opts.map(x=><option key={x}>{x}</option>)}</select><input className={input} value={r.a} placeholder='Amount' onChange={e=>setForm(form.map((x,ix)=>ix===i?{...x,a:e.target.value}:x))}/><select style={{colorScheme:dark?'dark':'light'}} className={input} value={r.p} onChange={e=>setForm(form.map((x,ix)=>ix===i?{...x,p:e.target.value}:x))}>{members.map(x=><option key={x}>{x}</option>)}</select></div>)}<button onClick={()=>setForm([...form,{t:'',a:'',p:members[0]}])} className={`w-full py-2 rounded-xl ${dark?'bg-white/10':'bg-slate-200'}`}>+ Add More Expense</button><button onClick={add} className='w-full py-2 rounded-xl bg-violet-600 text-white'>Save All Expenses</button></div>}
