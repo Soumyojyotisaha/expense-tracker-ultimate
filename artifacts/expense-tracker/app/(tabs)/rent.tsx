@@ -47,7 +47,6 @@ export default function RentScreen() {
   };
 
   const monthLabel = MONTHS[curMonth];
-  const perHead = Math.round((Number(rentVal) || 0) / 3);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -67,11 +66,6 @@ export default function RentScreen() {
             value={`₹${rent}`}
             icon="home"
             accent
-          />
-          <StatCard
-            title="Per Head"
-            value={`₹${Math.round(rent / 3)}`}
-            icon="user"
           />
         </View>
 
@@ -107,9 +101,9 @@ export default function RentScreen() {
           />
         </SectionCard>
 
-        <SectionCard title="Extra Charges per Person">
+        <SectionCard title="Rent Share per Member">
           <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-            Add any extra charges specific to each member (cab, food, etc.)
+            Set each member's individual rent share for this month.
           </Text>
           {MEMBERS.map((m) => (
             <View key={m} style={styles.memberRow}>
@@ -132,38 +126,47 @@ export default function RentScreen() {
           ))}
         </SectionCard>
 
-        {/* Monthly breakdown */}
+        {/* Monthly breakdown — last 3, current, next 3 */}
         <SectionCard title="Monthly Breakdown">
-          {MONTHS.map((mn, i) => (
-            <View
-              key={mn}
-              style={[styles.monthRow, { borderBottomColor: colors.border }]}
-            >
-              <View style={styles.monthLeft}>
-                <Text style={[styles.monthName, { color: colors.foreground }]}>
-                  {mn}
-                </Text>
-              </View>
-              <Text
+          {MONTHS.map((mn, i) => {
+            const start = Math.max(0, curMonth - 3);
+            const end = Math.min(11, curMonth + 3);
+            if (i < start || i > end) return null;
+            const isLast = i === end;
+            return (
+              <View
+                key={mn}
                 style={[
-                  styles.monthStatus,
-                  {
-                    color:
-                      i < curMonth
-                        ? colors.success
-                        : i === curMonth
-                        ? colors.warning
-                        : colors.mutedForeground,
-                  },
+                  styles.monthRow,
+                  { borderBottomColor: isLast ? "transparent" : colors.border },
                 ]}
               >
-                {i < curMonth ? "Paid" : i === curMonth ? "Current" : "Upcoming"}
-              </Text>
-              <Text style={[styles.monthAmt, { color: colors.primary }]}>
-                ₹{rent}
-              </Text>
-            </View>
-          ))}
+                <View style={styles.monthLeft}>
+                  <Text style={[styles.monthName, { color: colors.foreground }]}>
+                    {mn}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.monthStatus,
+                    {
+                      color:
+                        i < curMonth
+                          ? colors.success
+                          : i === curMonth
+                          ? colors.warning
+                          : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  {i < curMonth ? "Paid" : i === curMonth ? "Current" : "Upcoming"}
+                </Text>
+                <Text style={[styles.monthAmt, { color: colors.primary }]}>
+                  ₹{rent}
+                </Text>
+              </View>
+            );
+          })}
         </SectionCard>
 
         <TouchableOpacity
