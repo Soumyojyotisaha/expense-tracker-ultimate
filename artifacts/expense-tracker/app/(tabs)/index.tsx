@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   Platform,
+  Animated,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
@@ -22,6 +24,10 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { expenses, grid, utility, utilPick, share, paid, activity, loading, refresh } = useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const topFade = useRef(new Animated.Value(0)).current;
+  const bottomFade = useRef(new Animated.Value(1)).current;
+  const [viewH, setViewH] = useState(0);
+  const contentH = useRef(0);
 
   const now = new Date();
   const curMonth = now.getMonth();
@@ -64,7 +70,25 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 80;
+  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 100;
+
+  const handleScroll = (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const atBottom = y >= contentH.current - viewH - 16;
+
+    Animated.parallel([
+      Animated.timing(topFade, {
+        toValue: y > 12 ? 1 : 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(bottomFade, {
+        toValue: atBottom ? 0 : 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -72,13 +96,22 @@ export default function DashboardScreen() {
         title="Expense Tracker"
         subtitle={`Today: ${curDate} ${MONTHS[curMonth]} ${now.getFullYear()}`}
       />
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: bottomPad }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        }
-        showsVerticalScrollIndicator={false}
+
+      {/* Scroll area with edge fades */}
+      <View
+        style={styles.scrollWrapper}
+        onLayout={(e) => setViewH(e.nativeEvent.layout.height)}
       >
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: bottomPad }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          }
+          showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={(_, h) => { contentH.current = h; }}
+        >
         {/* Stats row */}
         <View style={styles.statsRow}>
           <StatCard
@@ -199,12 +232,55 @@ export default function DashboardScreen() {
           )}
         </SectionCard>
       </ScrollView>
+
+        {/* Top fade — appears after scrolling down */}
+        <Animated.View
+          style={[styles.fadeTop, { opacity: topFade }]}
+          pointerEvents="none"
+        >
+          <LinearGradient
+            colors={[colors.background, colors.background + "00"]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* Bottom fade — disappears when reaching the end */}
+        <Animated.View
+          style={[styles.fadeBottom, { opacity: bottomFade }]}
+          pointerEvents="none"
+        >
+          <LinearGradient
+            colors={[colors.background + "00", colors.background]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollWrapper: {
+    flex: 1,
+    position: "relative",
+  },
+  fadeTop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    zIndex: 10,
+  },
+  fadeBottom: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    zIndex: 10,
+  },
   statsRow: {
     flexDirection: "row",
     gap: 10,
