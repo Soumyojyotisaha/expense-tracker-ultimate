@@ -45,7 +45,7 @@ export default function DashboardScreen() {
   }));
 
   const allPaid = MEMBERS.every((m) => paid[m]);
-  const recentExpenses = expenses.slice(0, 10);
+  const recentExpenses = expenses.slice(0, 5);
 
   const catSpend: Record<string, number> = {};
   expenses
