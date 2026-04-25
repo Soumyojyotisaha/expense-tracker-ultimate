@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,22 +8,30 @@ import {
   RefreshControl,
   Platform,
   Animated,
+  Modal,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useApp, MEMBERS, MONTHS } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { Header } from "@/components/Header";
 import { StatCard } from "@/components/StatCard";
 import { SectionCard } from "@/components/SectionCard";
 import { ExpenseRow } from "@/components/ExpenseRow";
 
+const MONTHLY_BUDGET = 6000;
+
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { profile } = useAuth();
   const { expenses, grid, utility, utilPick, share, paid, activity, loading, refresh } = useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const [promptVisible, setPromptVisible] = useState(false);
   const topFade = useRef(new Animated.Value(0)).current;
   const bottomFade = useRef(new Animated.Value(1)).current;
   const [viewH, setViewH] = useState(0);
@@ -64,6 +72,10 @@ export default function DashboardScreen() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
+  useEffect(() => {
+    setPromptVisible(true);
+  }, []);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await refresh();
@@ -92,9 +104,50 @@ export default function DashboardScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={promptVisible}
+        onRequestClose={() => setPromptVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.background, borderColor: colors.border }]}> 
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Expense check</Text>
+            <Text style={[styles.modalMessage, { color: colors.foreground }]}>Hey {profile?.displayName || "there"}, did you log today's expense?</Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.muted }]}
+                onPress={() => setPromptVisible(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.foreground }]}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setPromptVisible(false);
+                  router.push("/add");
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.background }]}>Add Expense</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Header
-        title="Expense Tracker"
+        title="Expense Tracker Ultimate"
         subtitle={`Today: ${curDate} ${MONTHS[curMonth]} ${now.getFullYear()}`}
+        profileImageUri={profile?.imageUri}
+        onProfilePress={() => router.push("/profile")}
+        right={
+          <TouchableOpacity
+            onPress={() => router.push("/bills")}
+            style={[styles.headerAction, { backgroundColor: colors.secondary }]}
+          >
+            <Feather name="file-text" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        }
       />
 
       {/* Scroll area with edge fades */}
@@ -120,13 +173,39 @@ export default function DashboardScreen() {
             icon="calendar"
             accent
           />
-          <StatCard
-            title="This Month"
-            value={`₹${monthTotal}`}
-            subtitle={monthTotal <= 6000 ? "Within budget" : "Over budget"}
-            icon="trending-up"
-            iconColor={monthTotal <= 6000 ? colors.success : colors.destructive}
-          />
+          {/* Budget Card with Progress Bar */}
+          <View style={[styles.budgetCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+            <View style={styles.budgetHeader}>
+              <View style={styles.budgetTitleRow}>
+                <Feather name="trending-up" size={18} color={monthTotal <= MONTHLY_BUDGET ? colors.success : colors.destructive} />
+                <Text style={[styles.budgetTitle, { color: colors.foreground }]}>This Month</Text>
+              </View>
+              <Text style={[styles.budgetValue, { color: colors.primary }]}>
+                ₹{monthTotal}/{MONTHLY_BUDGET}
+              </Text>
+            </View>
+            
+            {/* Progress Bar */}
+            <View style={[styles.progressBarBg, { backgroundColor: colors.muted }]}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    width: `${Math.min((monthTotal / MONTHLY_BUDGET) * 100, 100)}%`,
+                    backgroundColor: monthTotal <= MONTHLY_BUDGET ? colors.success : colors.destructive,
+                  },
+                ]}
+              />
+            </View>
+            
+            {/* Status Text */}
+            <Text style={[styles.budgetStatus, { color: monthTotal <= MONTHLY_BUDGET ? colors.success : colors.destructive }]}>
+              {monthTotal <= MONTHLY_BUDGET 
+                ? `${((monthTotal / MONTHLY_BUDGET) * 100).toFixed(1)}% used`
+                : `Over by ₹${monthTotal - MONTHLY_BUDGET}`
+              }
+            </Text>
+          </View>
         </View>
 
         <View style={styles.statsRow}>
@@ -140,8 +219,19 @@ export default function DashboardScreen() {
             value={allPaid ? "All Paid" : "Pending"}
             icon="check-circle"
             iconColor={allPaid ? colors.success : colors.warning}
+            onPress={() => router.push('/utility')}
           />
         </View>
+
+        <SectionCard title="Bill Uploads">
+          <TouchableOpacity
+            style={[styles.billLink, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/bills')}
+          >
+            <Feather name="file-text" size={18} color="#fff" />
+            <Text style={[styles.billLinkText, { color: '#fff' }]}>Open Rent & Electricity Bill Uploads</Text>
+          </TouchableOpacity>
+        </SectionCard>
 
         {/* Member splits */}
         <SectionCard title="This Month's Split">
@@ -379,5 +469,101 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+  },
+  budgetCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+  },
+  budgetHeader: {
+    gap: 6,
+  },
+  budgetTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  budgetTitle: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  budgetValue: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  progressBarBg: {
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  budgetStatus: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+  },
+  headerAction: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    gap: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  modalMessage: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  billLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  billLinkText: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+  },
+  modalButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
   },
 });

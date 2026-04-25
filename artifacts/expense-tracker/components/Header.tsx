@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -16,9 +17,11 @@ type HeaderProps = {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  profileImageUri?: string;
+  onProfilePress?: () => void;
 };
 
-export function Header({ title, subtitle, right }: HeaderProps) {
+export function Header({ title, subtitle, right, profileImageUri, onProfilePress }: HeaderProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { isDark, toggleTheme } = useTheme();
@@ -57,6 +60,18 @@ export function Header({ title, subtitle, right }: HeaderProps) {
           )}
         </View>
         <View style={styles.rightRow}>
+          {(profileImageUri || onProfilePress) && (
+            <TouchableOpacity
+              onPress={onProfilePress}
+              style={[styles.profileBtn, { backgroundColor: colors.secondary }]}
+            >
+              {profileImageUri ? (
+                <Image source={{ uri: profileImageUri }} style={styles.profileImage} />
+              ) : (
+                <Feather name="user" size={18} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          )}
           {right}
           <TouchableOpacity
             onPress={toggleTheme}
@@ -129,5 +144,18 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
+  },
+  profileBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
   },
 });

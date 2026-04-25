@@ -1,6 +1,6 @@
 kind = "mobile"
 previewPath = "/"
-title = "Expense Tracker"
+title = "Expense Tracker Ultimate"
 version = "1.0.0"
 id = "artifacts/expense-tracker"
 router = "expo-domain"

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,22 +12,114 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
-import { useApp, MEMBERS, CATEGORIES, type Member, type Category } from "@/context/AppContext";
+import { useApp, MEMBERS, CATEGORIES, type Member, type Category, MONTHS } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { Header } from "@/components/Header";
 import { SectionCard } from "@/components/SectionCard";
 
 type FormRow = { t: string; a: string; p: Member };
 
+type EditLog = {
+  id: string;
+  user: string;
+  day: number;
+  month: number;
+  oldValue: number;
+  newValue: number;
+  timestamp: number;
+};
+
 export default function AddExpenseScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addExpenseRows, markActive, expenses } = useApp();
+  const router = useRouter();
+  const { profile } = useAuth();
+  const { addExpenseRows, markActive, expenses, removeExpense, grid, setCell } = useApp();
   const [rows, setRows] = useState<FormRow[]>([{ t: CATEGORIES[0], a: "", p: MEMBERS[0] }]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [editingDay, setEditingDay] = useState<number | null>(null);
+  const [logs, setLogs] = useState<EditLog[]>([]);
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 80;
+
+  const now = new Date();
+  const curMonth = now.getMonth();
+  const curDate = now.getDate();
+
+  const calendarData = useMemo(() => {
+    if (!grid) return {};
+    return grid;
+  }, [grid]);
+
+  const handleEditDay = (day: number) => {
+    const key = `${curMonth}-${day}`;
+    const currentValue = calendarData[key] ? Number(calendarData[key]) : 0;
+    
+    Alert.prompt(
+      "Edit Daily Total",
+      `Update expense total for ${day}/${curMonth + 1}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Update",
+          onPress: (value: string | undefined) => {
+            if (value !== undefined && value.trim() !== "") {
+              const newValue = Number(value) || 0;
+              if (newValue !== currentValue) {
+                setCell(day, curMonth, newValue);
+                addLog("You", day, curMonth, currentValue, newValue);
+                setMessage(`Updated ${day}/${curMonth + 1} to ₹${newValue}`);
+                setTimeout(() => setMessage(""), 2000);
+              }
+            }
+          },
+        },
+      ],
+      "plain-text",
+      currentValue.toString(),
+      "numeric"
+    );
+  };
+
+  const addLog = (user: string, day: number, month: number, oldValue: number, newValue: number) => {
+    const newLog: EditLog = {
+      id: Date.now().toString(),
+      user,
+      day,
+      month,
+      oldValue,
+      newValue,
+      timestamp: Date.now(),
+    };
+    setLogs((prev) => [newLog, ...prev].slice(0, 50));
+  };
+
+  const formatLogTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  useEffect(() => {
+    // Set April 20th value to 215 for testing
+    const april20Key = `${curMonth}-20`;
+    const currentValue = calendarData[april20Key] ? Number(calendarData[april20Key]) : 0;
+    if (currentValue !== 215 && curMonth === 3) {
+      setCell(20, curMonth, 215);
+    }
+  }, [curMonth]);
+
+  useEffect(() => {
+    // Clean up logs older than 24 hours
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      setLogs((prevLogs) => prevLogs.filter((log) => now - log.timestamp < oneDayMs));
+    }, 60000); // Check every minute
+    return () => clearInterval(timer);
+  }, []);
 
   const updateRow = (idx: number, key: keyof FormRow, val: string) => {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: val } : r)));
@@ -40,6 +132,26 @@ export default function AddExpenseScreen() {
   const removeRow = (idx: number) => {
     if (rows.length === 1) return;
     setRows((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDeleteExpense = async (expense: any) => {
+    Alert.alert(
+      "Delete Expense",
+      `Are you sure you want to delete this ₹${expense.a} ${expense.t || "Utility"} expense?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await removeExpense(expense.id);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            setMessage("Expense deleted!");
+            setTimeout(() => setMessage(""), 2000);
+          },
+        },
+      ]
+    );
   };
 
   const handleSubmit = async () => {
@@ -67,7 +179,12 @@ export default function AddExpenseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Add Expense" subtitle="Log today's spending" />
+      <Header
+        title="Add Expense"
+        subtitle="Log today's spending"
+        profileImageUri={profile?.imageUri}
+        onProfilePress={() => router.push("/profile")}
+      />
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -213,27 +330,94 @@ export default function AddExpenseScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Recent expenses */}
-        {expenses.length > 0 && (
-          <SectionCard title="All Expenses">
-            {expenses.slice(0, 20).map((e) => (
+        {/* Activity Logs */}
+        {logs.length > 0 && (
+          <SectionCard title="Manual Edit Logs (Last 24 Hours)">
+            {logs.map((log) => (
               <View
-                key={e.id}
-                style={[styles.expRow, { borderBottomColor: colors.border }]}
+                key={log.id}
+                style={[styles.logRow, { borderBottomColor: colors.border }]}
               >
-                <View>
-                  <Text style={[styles.expCat, { color: colors.foreground }]}>
-                    {e.t || "Utility"}
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.logUser, { color: colors.foreground }]}>
+                    {log.user} updated {log.day}/{log.month + 1}
                   </Text>
-                  <Text style={[styles.expMeta, { color: colors.mutedForeground }]}>
-                    {e.d}/{(e.m ?? 0) + 1} • {e.p}
+                  <Text style={[styles.logChange, { color: colors.primary }]}>
+                    ₹{log.oldValue} → ₹{log.newValue}
+                  </Text>
+                  <Text style={[styles.logTime, { color: colors.mutedForeground }]}>
+                    {formatLogTime(log.timestamp)}
                   </Text>
                 </View>
-                <Text style={[styles.expAmt, { color: colors.primary }]}>₹{e.a}</Text>
               </View>
             ))}
           </SectionCard>
         )}
+
+        {/* Calendar view */}
+        <SectionCard title={`${MONTHS[curMonth]} ${now.getFullYear()}`}>
+          {/* Day headers */}
+          <View style={styles.calendarDayHeaders}>
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <View key={day} style={styles.calendarDayHeader}>
+                <Text style={[styles.calendarDayHeaderText, { color: colors.mutedForeground }]}>
+                  {day}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Calendar grid */}
+          <View style={styles.calendarGrid}>
+            {Array.from({ length: 42 }).map((_, idx) => {
+              const firstDay = new Date(now.getFullYear(), curMonth, 1).getDay();
+              const daysInMonth = new Date(now.getFullYear(), curMonth + 1, 0).getDate();
+              const day = idx - firstDay + 1;
+
+              if (day < 1 || day > daysInMonth) {
+                return <View key={idx} style={styles.calendarCell} />;
+              }
+
+              const key = `${curMonth}-${day}`;
+              const expenseForDay = calendarData && calendarData[key] ? Number(calendarData[key]) : 0;
+              const isToday = day === curDate;
+
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleEditDay(day)}
+                  style={[
+                    styles.calendarCell,
+                    {
+                      backgroundColor: isToday ? colors.primary : expenseForDay > 0 ? colors.secondary : colors.muted,
+                      borderWidth: isToday ? 2 : 1,
+                      borderColor: isToday ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.calendarDay,
+                      { color: isToday ? "#fff" : colors.foreground },
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                  {expenseForDay > 0 && (
+                    <Text
+                      style={[
+                        styles.calendarAmount,
+                        { color: isToday ? "#fff" : colors.primary },
+                      ]}
+                    >
+                      ₹{expenseForDay}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </SectionCard>
       </ScrollView>
     </View>
   );
@@ -335,5 +519,60 @@ const styles = StyleSheet.create({
   expAmt: {
     fontSize: 15,
     fontFamily: "Inter_700Bold",
+  },
+  calendarDayHeaders: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  calendarDayHeader: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  calendarDayHeaderText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  calendarCell: {
+    width: "14.28%",
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    marginBottom: 4,
+    padding: 4,
+  },
+  calendarDay: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  calendarAmount: {
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    marginTop: 2,
+  },
+  logRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  logUser: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  logChange: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    marginTop: 4,
+  },
+  logTime: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
   },
 });

@@ -11,7 +11,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
 import { useApp, MEMBERS, MONTHS, type ShareMap } from "@/context/AppContext";
 import { Header } from "@/components/Header";
 import { SectionCard } from "@/components/SectionCard";
@@ -20,6 +22,8 @@ import { StatCard } from "@/components/StatCard";
 export default function RentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { profile } = useAuth();
   const { rent, deposit, share, rentMonthPaid, saveRentData, saveRentMonthPaid } = useApp();
 
   const [rentVal, setRentVal] = useState(String(rent));
@@ -48,6 +52,17 @@ export default function RentScreen() {
 
   const monthLabel = MONTHS[curMonth];
 
+  const totalShare = MEMBERS.reduce((sum, m) => sum + (Number(shareVals[m]) || 0), 0);
+  const rentNum = Number(rentVal) || 0;
+  const isShareValid = totalShare === rentNum;
+
+  const handleAutoDistribute = () => {
+    const perMember = rentNum / MEMBERS.length;
+    setShareVals(
+      Object.fromEntries(MEMBERS.map((m) => [m, perMember.toFixed(2)]))
+    );
+  };
+
   const toggleRentMonth = async (i: number) => {
     if (i < curMonth) return; // past months are locked
     const next = { ...rentMonthPaid, [i]: !rentMonthPaid[i] };
@@ -56,7 +71,20 @@ export default function RentScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Rent" subtitle={`${monthLabel} ${now.getFullYear()}`} />
+      <Header
+        title="Rent"
+        subtitle={`${monthLabel} ${now.getFullYear()}`}
+        profileImageUri={profile?.imageUri}
+        onProfilePress={() => router.push("/profile")}
+        right={
+          <TouchableOpacity
+            onPress={() => router.push("/bills")}
+            style={[styles.headerAction, { backgroundColor: colors.secondary }]}
+          >
+            <Feather name="file-text" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        }
+      />
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -108,6 +136,26 @@ export default function RentScreen() {
         </SectionCard>
 
         <SectionCard title="Rent Share per Member">
+          <View style={[styles.shareValidation, { borderColor: isShareValid ? colors.success : colors.warning, backgroundColor: isShareValid ? colors.success + "12" : colors.warning + "12" }]}>
+            <View>
+              <Text style={[styles.validationLabel, { color: colors.mutedForeground }]}>Shares Total</Text>
+              <Text style={[styles.validationAmount, { color: isShareValid ? colors.success : colors.warning }]}>₹{totalShare.toFixed(2)}</Text>
+            </View>
+            <Text style={[styles.validationSlash, { color: colors.border }]}>/</Text>
+            <View>
+              <Text style={[styles.validationLabel, { color: colors.mutedForeground }]}>Total Rent</Text>
+              <Text style={[styles.validationAmount, { color: colors.primary }]}>₹{rentNum.toFixed(2)}</Text>
+            </View>
+          </View>
+          {!isShareValid && rentNum > 0 && (
+            <TouchableOpacity
+              onPress={handleAutoDistribute}
+              style={[styles.autoDistributeBtn, { backgroundColor: colors.primary }]}
+            >
+              <Feather name="shuffle" size={14} color="#fff" />
+              <Text style={styles.autoDistributeText}>Auto Distribute Equally</Text>
+            </TouchableOpacity>
+          )}
           <Text style={[styles.hint, { color: colors.mutedForeground }]}>
             Set each member's individual rent share for this month.
           </Text>
@@ -130,6 +178,16 @@ export default function RentScreen() {
               />
             </View>
           ))}
+        </SectionCard>
+
+        <SectionCard title="Bill Uploads">
+          <TouchableOpacity
+            onPress={() => router.push("/bills")}
+            style={[styles.billPageBtn, { backgroundColor: colors.primary }]}
+          >
+            <Feather name="file-text" size={16} color="#fff" />
+            <Text style={styles.billPageText}>Open Rent / Electricity Bill Uploads</Text>
+          </TouchableOpacity>
         </SectionCard>
 
         {/* Monthly breakdown — last 3, current, next 3 */}
@@ -235,6 +293,68 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     marginBottom: 12,
   },
+  shareValidation: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
+    gap: 16,
+  },
+  validationLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    marginBottom: 4,
+  },
+  validationAmount: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+  },
+  validationSlash: {
+    fontSize: 20,
+    fontFamily: "Inter_400Regular",
+  },
+  autoDistributeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 6,
+  },
+  autoDistributeText: {
+    color: "#fff",
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  billPageBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 14,
+    gap: 8,
+  },
+  billPageText: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  billLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 16,
+    gap: 10,
+  },
+  billLinkText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -298,6 +418,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     minWidth: 54,
     textAlign: "right",
+  },
+  headerAction: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveBtn: {
     flexDirection: "row",

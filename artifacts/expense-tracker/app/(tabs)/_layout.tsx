@@ -1,14 +1,15 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
 
 function NativeTabLayout() {
   return (
@@ -24,6 +25,10 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="rent">
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>Rent</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="bills">
+        <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
+        <Label>Bills</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="utility">
         <Icon sf={{ default: "bolt", selected: "bolt.fill" }} />
@@ -112,6 +117,18 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="bills"
+        options={{
+          title: "Bills",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="doc.text" tintColor={color} size={22} />
+            ) : (
+              <Feather name="file-text" size={20} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="utility"
         options={{
           title: "Utility",
@@ -140,6 +157,19 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { member, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !member) {
+      router.replace("/login");
+    }
+  }, [loading, member, router]);
+
+  if (loading) {
+    return null;
+  }
+
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

@@ -11,19 +11,25 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useApp, MEMBERS, MONTHS } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { Header } from "@/components/Header";
 import { SectionCard } from "@/components/SectionCard";
 
 export default function MembersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { expenses, grid, utility, utilPick, share, notes, maid, addNote, saveMaid } = useApp();
+  const router = useRouter();
+  const { member, logout, profile } = useAuth();
+  const { expenses, grid, utility, utilPick, share, notes, maid, addNote, editNote, deleteNote, toggleCompleted, saveMaid } = useApp();
   const [noteTxt, setNoteTxt] = useState("");
   const [savedNote, setSavedNote] = useState(false);
   const [leaveDate, setLeaveDate] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "notes" | "maid">("overview");
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const now = new Date();
   const curMonth = now.getMonth();
@@ -55,11 +61,52 @@ export default function MembersScreen() {
     setLeaveDate("");
   };
 
+  const handleEditNote = (id: number, txt: string) => {
+    setEditingNoteId(id);
+    setEditingText(txt);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editingNoteId !== null && editingText.trim()) {
+      await editNote(editingNoteId, editingText.trim());
+      setEditingNoteId(null);
+      setEditingText("");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
+    setEditingText("");
+  };
+
+  const handleDeleteNote = async (id: number) => {
+    await deleteNote(id);
+  };
+
+  const handleToggleCompleted = async (id: number) => {
+    await toggleCompleted(id);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
+
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 80;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Members" subtitle="3 flatmates" />
+      <Header
+        title="Members"
+        subtitle={member ? `${member} • 3 flatmates` : "3 flatmates"}
+        profileImageUri={profile?.imageUri}
+        onProfilePress={() => router.push("/profile")}
+        right={
+          <TouchableOpacity onPress={handleLogout} style={[styles.logoutBtn, { backgroundColor: colors.secondary }]}> 
+            <Text style={[styles.logoutText, { color: colors.primary }]}>Logout</Text>
+          </TouchableOpacity>
+        }
+      />
       <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         {(["overview", "notes", "maid"] as const).map((t) => (
           <TouchableOpacity
@@ -131,7 +178,7 @@ export default function MembersScreen() {
                         ₹{totalOwed.toFixed(0)}
                       </Text>
                       <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>
-                        Total owed
+                        Rent+Utility Share
                       </Text>
                     </View>
                     <View style={[styles.statItem, { backgroundColor: colors.secondary }]}>
@@ -146,33 +193,6 @@ export default function MembersScreen() {
                 </SectionCard>
               );
             })}
-
-            {/* Monthly payment status */}
-            <SectionCard title="Monthly Status">
-              {MONTHS.map((mn, i) => (
-                <View
-                  key={mn}
-                  style={[styles.monthRow, { borderBottomColor: colors.border }]}
-                >
-                  <Text style={[styles.monthName, { color: colors.foreground }]}>{mn}</Text>
-                  <Text
-                    style={[
-                      styles.monthStatus,
-                      {
-                        color:
-                          i < curMonth
-                            ? colors.success
-                            : i === curMonth
-                            ? colors.warning
-                            : colors.mutedForeground,
-                      },
-                    ]}
-                  >
-                    {i < curMonth ? "Paid" : i === curMonth ? "Current" : "Upcoming"}
-                  </Text>
-                </View>
-              ))}
-            </SectionCard>
           </>
         )}
 
@@ -206,10 +226,68 @@ export default function MembersScreen() {
                 <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notes yet</Text>
               </View>
             ) : (
-              notes.map((n, i) => (
-                <SectionCard key={i}>
-                  <Text style={[styles.noteTxt, { color: colors.foreground }]}>{n.txt}</Text>
-                  <Text style={[styles.noteTime, { color: colors.mutedForeground }]}>{n.time}</Text>
+              notes.filter(n => !n.completed).map((n, i) => (
+                <SectionCard key={n.id}>
+                  {editingNoteId === n.id ? (
+                    <>
+                      <TextInput
+                        style={[
+                          styles.noteInput,
+                          { borderColor: colors.border, backgroundColor: colors.muted, color: colors.foreground },
+                        ]}
+                        value={editingText}
+                        onChangeText={setEditingText}
+                        multiline
+                        numberOfLines={3}
+                      />
+                      <View style={styles.editActions}>
+                        <TouchableOpacity
+                          onPress={handleSaveEdit}
+                          style={[styles.editBtn, { backgroundColor: colors.success }]}
+                        >
+                          <Feather name="check" size={16} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={handleCancelEdit}
+                          style={[styles.editBtn, { backgroundColor: colors.mutedForeground }]}
+                        >
+                          <Feather name="x" size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Text
+                        style={[
+                          styles.noteTxt,
+                          { color: colors.foreground, textDecorationLine: n.completed ? 'line-through' : 'none' },
+                        ]}
+                      >
+                        {n.txt}
+                      </Text>
+                      <Text style={[styles.noteTime, { color: colors.mutedForeground }]}>{n.time}</Text>
+                      <View style={styles.noteActions}>
+                        <TouchableOpacity
+                          onPress={() => handleToggleCompleted(n.id)}
+                          style={[styles.actionBtn, { backgroundColor: n.completed ? colors.success : colors.warning }]}
+                        >
+                          <Feather name={n.completed ? "check-circle" : "circle"} size={16} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleEditNote(n.id, n.txt)}
+                          style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                        >
+                          <Feather name="edit" size={16} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteNote(n.id)}
+                          style={[styles.actionBtn, { backgroundColor: colors.destructive }]}
+                        >
+                          <Feather name="trash" size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
                 </SectionCard>
               ))
             )}
@@ -317,6 +395,15 @@ const styles = StyleSheet.create({
   memberStats: {
     flexDirection: "row",
     gap: 8,
+  },
+  logoutBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  logoutText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
   },
   statItem: {
     flex: 1,
@@ -436,5 +523,30 @@ const styles = StyleSheet.create({
   leaveDate: {
     fontSize: 14,
     fontFamily: "Inter_500Medium",
+  },
+  noteActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 8,
+  },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  editBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,14 @@ import {
   Switch,
   Modal,
   Platform,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
 import {
   useApp,
   MEMBERS,
@@ -28,6 +31,8 @@ import { SectionCard } from "@/components/SectionCard";
 export default function UtilityScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { profile } = useAuth();
   const { utility, utilPick, paid, saveUtilityData, savePaid } = useApp();
 
   const [items, setItems] = useState<UtilityItem[]>(utility);
@@ -35,20 +40,32 @@ export default function UtilityScreen() {
   const [paidState, setPaidState] = useState<PaidMap>({ ...paid });
   const [saved, setSaved] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [deletedItems, setDeletedItems] = useState<{ item: UtilityItem; index: number }[]>([]);
 
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 80;
 
   const utilShare = (name: Member) => {
     const arr = picks[name] || [];
-    const base = arr.filter((i) => i < items.length - 1 && i < 4).reduce(
-      (s, i) => s + items[i].a,
-      0
-    ) / 3;
-    const harshExtra = arr.includes(4) && items[4] ? items[4].a : 0;
-    return name === "Harsh" ? base + harshExtra : base;
+    
+    // Calculate base items: indices 0-3 and any items beyond 4
+    let baseAmount = 0;
+    arr.forEach((i) => {
+      if ((i >= 0 && i <= 3) || i > 4) {
+        baseAmount += items[i]?.a || 0;
+      }
+    });
+    const base = baseAmount / 3;
+    
+    // Calculate extra: item at index 4 (Harsh only)
+    const extra = arr.includes(4) && items[4] ? items[4].a : 0;
+    
+    return base + extra;
   };
 
-  const totalUtil = items.reduce((s, x) => s + x.a, 0);
+  const totalUtil = useMemo(() => 
+    MEMBERS.reduce((sum, m) => sum + utilShare(m), 0), 
+    [picks, items]
+  );
 
   const handleSave = async () => {
     await saveUtilityData(items, picks);
@@ -78,12 +95,49 @@ export default function UtilityScreen() {
   };
 
   const addItem = () => setItems((p) => [...p, { n: "", a: 0 }]);
-  const removeItem = (idx: number) => setItems((p) => p.filter((_, i) => i !== idx));
+  
+  const confirmDelete = (idx: number) => {
+    const itemName = items[idx].n || `Item ${idx + 1}`;
+    Alert.alert(
+      "Delete Item?",
+      `Do you really want to delete "${itemName}"?`,
+      [
+        {
+          text: "No",
+          onPress: () => {},
+          style: "cancel",
+        },
+        {
+          text: "Yes",
+          onPress: () => removeItem(idx),
+          style: "destructive",
+        },
+      ]
+    );
+  };
+
+  const removeItem = (idx: number) => {
+    setDeletedItems((prev) => [...prev, { item: items[idx], index: idx }]);
+    setItems((p) => p.filter((_, i) => i !== idx));
+  };
+
+  const undoDelete = () => {
+    if (deletedItems.length === 0) return;
+    const last = deletedItems[deletedItems.length - 1];
+    const newItems = [...items];
+    newItems.splice(last.index, 0, last.item);
+    setItems(newItems);
+    setDeletedItems((prev) => prev.slice(0, -1));
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Header
         title="Utility"
+        subtitle="Track shared bills"
+        profileImageUri={profile?.imageUri}
+        onProfilePress={() => router.push("/profile")}
+
         right={
           <TouchableOpacity
             onPress={() => setShowPayModal(true)}
@@ -177,7 +231,7 @@ export default function UtilityScreen() {
                   placeholderTextColor={colors.mutedForeground}
                 />
               </View>
-              <TouchableOpacity onPress={() => removeItem(idx)} style={styles.delBtn}>
+              <TouchableOpacity onPress={() => confirmDelete(idx)} style={styles.delBtn}>
                 <Feather name="trash-2" size={14} color={colors.destructive} />
               </TouchableOpacity>
             </View>
@@ -199,7 +253,12 @@ export default function UtilityScreen() {
                 <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
                   <Text style={[styles.avatarTxt, { color: colors.primary }]}>{m[0]}</Text>
                 </View>
-                <Text style={[styles.memberPickName, { color: colors.foreground }]}>{m}</Text>
+                <View style={styles.nameAndAmount}>
+                  <Text style={[styles.memberPickName, { color: colors.foreground }]}>{m}</Text>
+                  <Text style={[styles.memberAmount, { color: colors.primary }]}>
+                    ₹{utilShare(m).toFixed(2)}
+                  </Text>
+                </View>
               </View>
               <View style={styles.pickChips}>
                 {items.map((item, idx) => (
@@ -375,6 +434,20 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   delBtn: { padding: 4 },
+  undoNotification: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+    gap: 8,
+  },
+  undoText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+  },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -400,6 +473,14 @@ const styles = StyleSheet.create({
   memberPickName: {
     fontSize: 14,
     fontFamily: "Inter_600SemiBold",
+  },
+  nameAndAmount: {
+    flex: 1,
+  },
+  memberAmount: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    marginTop: 2,
   },
   pickChips: {
     flexDirection: "row",

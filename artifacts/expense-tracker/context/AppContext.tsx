@@ -46,6 +46,12 @@ export type PaidMap = Record<Member, boolean>;
 export type UtilPickMap = Record<Member, number[]>;
 export type DailyGrid = Record<string, number>;
 
+export type BillScreenshotEntry = {
+  rentUri?: string;
+  electricityUri?: string;
+};
+export type BillScreenshotMap = Record<string, BillScreenshotEntry>;
+
 type MaidData = { start: string; leaves: string[] };
 
 type AppContextType = {
@@ -58,7 +64,8 @@ type AppContextType = {
   utilPick: UtilPickMap;
   paid: PaidMap;
   rentMonthPaid: Record<number, boolean>;
-  notes: { txt: string; time: string }[];
+  billScreenshots: BillScreenshotMap;
+  notes: { id: number; txt: string; time: string; completed: boolean }[];
   activity: { user: string; time: string };
   maid: MaidData;
   dbReady: boolean;
@@ -70,10 +77,13 @@ type AppContextType = {
   setUtility: (v: UtilityItem[]) => void;
   setUtilPick: (v: UtilPickMap) => void;
   setPaid: (v: PaidMap) => void;
-  setNotes: (v: { txt: string; time: string }[]) => void;
+  setNotes: (v: { id: number; txt: string; time: string; completed: boolean }[]) => void;
   setMaid: (v: MaidData) => void;
 
   addNote: (txt: string) => Promise<void>;
+  editNote: (id: number, txt: string) => Promise<void>;
+  deleteNote: (id: number) => Promise<void>;
+  toggleCompleted: (id: number) => Promise<void>;
   markActive: (user: string) => Promise<void>;
   addExpenseRows: (rows: { t: string; a: string; p: string }[]) => Promise<string>;
   removeExpense: (id: number) => Promise<void>;
@@ -83,6 +93,7 @@ type AppContextType = {
   saveUtilityData: (items: UtilityItem[], picks: UtilPickMap) => Promise<void>;
   savePaid: (p: PaidMap) => Promise<void>;
   saveRentMonthPaid: (v: Record<number, boolean>) => Promise<void>;
+  saveBillScreenshots: (v: BillScreenshotMap) => Promise<void>;
   saveMaid: (v: MaidData) => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -121,7 +132,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [utilPick, setUtilPickState] = useState<UtilPickMap>(defaultUtilPick);
   const [paid, setPaidState] = useState<PaidMap>(defaultPaid);
   const [rentMonthPaid, setRentMonthPaidState] = useState<Record<number, boolean>>({});
-  const [notes, setNotesState] = useState<{ txt: string; time: string }[]>([]);
+  const [billScreenshots, setBillScreenshots] = useState<BillScreenshotMap>({});
+  const [notes, setNotesState] = useState<{ id: number; txt: string; time: string; completed: boolean }[]>([]);
   const [activity, setActivityState] = useState({ user: "-", time: "-" });
   const [maid, setMaidState] = useState<MaidData>({ start: "", leaves: [] });
   const [dbReady, setDbReady] = useState(false);
@@ -161,7 +173,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r.k === "utilPick") setUtilPickState(val as UtilPickMap);
         if (r.k === "paid") setPaidState({ ...defaultPaid, ...(val as PaidMap) });
         if (r.k === "rentMonthPaid") setRentMonthPaidState(val as Record<number, boolean>);
-        if (r.k === "notes") setNotesState(val as { txt: string; time: string }[]);
+        if (r.k === "billScreenshots") setBillScreenshots(val as BillScreenshotMap);
+        if (r.k === "notes") {
+          const loadedNotes = val as any[];
+          const migratedNotes = loadedNotes.map((n, index) => ({
+            id: n.id || Date.now() + index, // assign id if missing
+            txt: n.txt,
+            time: n.time,
+            completed: n.completed || false,
+          }));
+          setNotesState(migratedNotes);
+        }
         if (r.k === "activity") setActivityState(val as { user: string; time: string });
         if (r.k === "maid") setMaidState(val as MaidData);
       });
@@ -179,7 +201,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const addNote = async (txt: string) => {
-    const ns = [{ txt, time: new Date().toLocaleString("en-IN") }, ...notes].slice(0, 20);
+    const id = Date.now(); // simple id
+    const ns = [{ id, txt, time: new Date().toLocaleString("en-IN"), completed: false }, ...notes].slice(0, 20);
+    setNotesState(ns);
+    await saveCfg("notes", ns);
+  };
+
+  const editNote = async (id: number, txt: string) => {
+    const ns = notes.map(n => n.id === id ? { ...n, txt } : n);
+    setNotesState(ns);
+    await saveCfg("notes", ns);
+  };
+
+  const deleteNote = async (id: number) => {
+    const ns = notes.filter(n => n.id !== id);
+    setNotesState(ns);
+    await saveCfg("notes", ns);
+  };
+
+  const toggleCompleted = async (id: number) => {
+    const ns = notes.map(n => n.id === id ? { ...n, completed: !n.completed } : n);
     setNotesState(ns);
     await saveCfg("notes", ns);
   };
@@ -215,8 +256,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeExpense = async (id: number) => {
+    // Find the expense to get its date info
+    const expenseToDelete = expenses.find((x) => x.id === id);
+    if (!expenseToDelete) return;
+
     const err = await deleteExpense(id);
-    if (!err) setExpenses((p) => p.filter((x) => x.id !== id));
+    if (!err) {
+      // Remove from expenses state
+      setExpenses((p) => p.filter((x) => x.id !== id));
+
+      // Recalculate total for that day
+      const remainingExpensesForDay = expenses
+        .filter((x) => x.id !== id && Number(x.m) === expenseToDelete.m && Number(x.d) === expenseToDelete.d)
+        .reduce((sum, x) => sum + Number(x.a), 0);
+
+      // Update grid
+      const key = `${expenseToDelete.m}-${expenseToDelete.d}`;
+      const ng = { ...grid, [key]: remainingExpensesForDay };
+      setGridState(ng);
+      await saveCfg("grid", ng);
+      await upsertDailySheet(expenseToDelete.m, expenseToDelete.d, remainingExpensesForDay);
+    }
   };
 
   const editExpense = async (id: number, field: string, value: unknown) => {
@@ -258,6 +318,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await saveCfg("rentMonthPaid", v);
   };
 
+  const saveBillScreenshots = async (v: BillScreenshotMap) => {
+    setBillScreenshots(v);
+    await saveCfg("billScreenshots", v);
+  };
+
   const saveMaid = async (v: MaidData) => {
     setMaidState(v);
     await saveCfg("maid", v);
@@ -289,6 +354,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setNotes: setNotesState,
         setMaid: setMaidState,
         addNote,
+        editNote,
+        deleteNote,
+        toggleCompleted,
         markActive,
         addExpenseRows,
         removeExpense,
@@ -298,6 +366,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         saveUtilityData,
         savePaid,
         saveRentMonthPaid,
+        saveBillScreenshots,
         saveMaid,
         refresh,
       }}
